@@ -94,7 +94,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Database Tab States (Hostinger MySQL / phpMyAdmin / PHP Bridge)
   const [dbConfig, setDbConfig] = useState<DatabaseConfig>(() => StorageService.getDatabaseConfig());
-  const [activeDbTab, setActiveDbTab] = useState<'bridge' | 'direct' | 'phpmyadmin'>('direct');
+  // The PHP bridge is the primary (and only) working flow on static hosting,
+  // while 'direct' works when the app runs with the Node.js server.
+  const [activeDbTab, setActiveDbTab] = useState<'bridge' | 'direct' | 'phpmyadmin'>('bridge');
   const [isTestingDb, setIsTestingDb] = useState(false);
   const [dbTestResult, setDbTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isSyncingTables, setIsSyncingTables] = useState(false);
@@ -328,6 +330,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     document.body.removeChild(link);
   };
 
+  /**
+   * Calls the uploaded bible_sync.php directly from the browser — works on static
+   * hosting too (the old Node relay endpoints 404 there). Throws with a clear
+   * Arabic error message when anything goes wrong.
+   */
+  const callBridgeDirectly = async (action: string, extra: Record<string, unknown> = {}) => {
+    const url = (dbConfig.bridgeUrl || '').trim();
+    let data: any;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, secret: dbConfig.bridgeSecret || '', ...extra }),
+      });
+      const text = await res.text();
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`الرد من الجسر ليس JSON (الرد يبدأ بـ: ${text.slice(0, 80)}). تأكد أن الملف مرفوع بشكل صحيح رفعه بصيغة PHP سليمة.`);
+      }
+    } catch (err: any) {
+      if (err instanceof TypeError) {
+        throw new Error(`تعذر الوصول إلى «${url}». تأكد من صحة الرابط ومن رفع الملف على الاستضافة ومن عدم منع الطلبات الخارجية (CORS).`);
+      }
+      throw err;
+    }
+    if (data && data.success === false) {
+      throw new Error(data.message || data.error || 'فشل تنفيذ العملية عبر جسر PHP.');
+    }
+    return data;
+  };
+
   const handleTestBridge = async () => {
     if (!dbConfig.bridgeUrl?.trim()) {
       setDbTestResult({
@@ -342,24 +376,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     StorageService.saveDatabaseConfig(dbConfig);
 
     try {
-      const res = await fetch('/api/db/bridge-test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bridgeUrl: dbConfig.bridgeUrl.trim(),
-          bridgeSecret: dbConfig.bridgeSecret,
-        }),
-      });
-
-      const data = await parseSafeApiResponse(res, 'فشل الاتصال بجسر PHP على Hostinger.');
+      const data = await callBridgeDirectly('test');
       setDbTestResult({
-        success: Boolean(data.success),
-        message: data.message || (data.success ? 'تم الاتصال بنجاح عبر جسر PHP!' : 'فشل الاتصال.'),
+        success: true,
+        message: data.message || 'تم الاتصال بنجاح عبر جسر PHP!',
       });
-      if (data.success) {
-        setDbConfig(prev => ({ ...prev, isConnected: true, lastChecked: new Date().toLocaleTimeString('ar-EG') }));
-        StorageService.saveDatabaseConfig({ ...dbConfig, isConnected: true });
-      }
+      setDbConfig(prev => ({ ...prev, isConnected: true, lastChecked: new Date().toLocaleTimeString('ar-EG') }));
+      StorageService.saveDatabaseConfig({ ...dbConfig, isConnected: true });
     } catch (err: any) {
       setDbTestResult({
         success: false,
@@ -383,24 +406,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setSyncResult(null);
 
     try {
-      const res = await fetch('/api/db/bridge-sync-tables', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bridgeUrl: dbConfig.bridgeUrl.trim(),
-          bridgeSecret: dbConfig.bridgeSecret,
-        }),
-      });
-
-      const data = await parseSafeApiResponse(res, 'تعذر إنشاء الجداول عبر جسر PHP.');
+      const data = await callBridgeDirectly('sync_tables');
       setSyncResult({
-        success: Boolean(data.success),
-        message: data.message || (data.success ? 'تم إنشاء وتحديث الجداول بنجاح!' : 'فشل إنشاء الجداول.'),
+        success: true,
+        message: data.message || 'تم إنشاء وتحديث الجداول بنجاح!',
       });
-      if (data.success) {
-        setDbConfig(prev => ({ ...prev, isConnected: true }));
-        StorageService.saveDatabaseConfig({ ...dbConfig, isConnected: true });
-      }
+      setDbConfig(prev => ({ ...prev, isConnected: true }));
+      StorageService.saveDatabaseConfig({ ...dbConfig, isConnected: true });
     } catch (err: any) {
       setSyncResult({
         success: false,
@@ -424,31 +436,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setDbTestResult(null);
 
     try {
-      const res = await fetch('/api/db/bridge-pull', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bridgeUrl: dbConfig.bridgeUrl.trim(),
-          bridgeSecret: dbConfig.bridgeSecret,
-        }),
+      const data = await callBridgeDirectly('pull');
+      // DB is the single source of truth — trigger a fresh reload through the bridge
+      requestAppDataRefresh();
+      setDbTestResult({
+        success: true,
+        message: data.message || 'تم الاتصال بجسر PHP بنجاح! البيانات تُجلب الآن من قاعدة البيانات مباشرة.',
       });
-
-      const data = await parseSafeApiResponse(res, 'فشل جلب البيانات من Hostinger عبر الجسر.');
-      if (data.success) {
-        // DB is the single source of truth — trigger a fresh reload from the API
-        requestAppDataRefresh();
-        setDbTestResult({
-          success: true,
-          message: data.message || 'تم التأكيد أن جسر PHP متصل بقاعدة بيانات Hostinger بنجاح! البيانات تُجلب الآن عبر قاعدة البيانات مباشرة.',
-        });
-        setDbConfig(prev => ({ ...prev, isConnected: true, lastChecked: new Date().toLocaleTimeString('ar-EG') }));
-        StorageService.saveDatabaseConfig({ ...dbConfig, isConnected: true });
-      } else {
-        setDbTestResult({
-          success: false,
-          message: data.message || 'تعذر الاتصال بـ Hostinger.',
-        });
-      }
+      setDbConfig(prev => ({ ...prev, isConnected: true, lastChecked: new Date().toLocaleTimeString('ar-EG') }));
+      StorageService.saveDatabaseConfig({ ...dbConfig, isConnected: true });
     } catch (err: any) {
       setDbTestResult({
         success: false,
@@ -473,29 +469,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     try {
       // Push the live app data (already loaded from the DB) via the bridge
-      const currentQuizzes = quizzes;
-      const currentUsers = users;
-
-      const res = await fetch('/api/db/bridge-push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bridgeUrl: dbConfig.bridgeUrl.trim(),
-          bridgeSecret: dbConfig.bridgeSecret,
-          quizzes: currentQuizzes,
-          users: currentUsers,
-        }),
-      });
-
-      const data = await parseSafeApiResponse(res, 'فشل رفع البيانات إلى Hostinger عبر الجسر.');
+      const data = await callBridgeDirectly('push', { quizzes, users });
       setSyncResult({
-        success: Boolean(data.success),
-        message: data.message || (data.success ? 'تم حفظ ومزامنة البيانات في Hostinger بنجاح!' : 'فشل رفع البيانات.'),
+        success: true,
+        message: data.message || 'تم حفظ ومزامنة البيانات في Hostinger بنجاح!',
       });
-      if (data.success) {
-        setDbConfig(prev => ({ ...prev, isConnected: true }));
-        StorageService.saveDatabaseConfig({ ...dbConfig, isConnected: true });
-      }
+      setDbConfig(prev => ({ ...prev, isConnected: true }));
+      StorageService.saveDatabaseConfig({ ...dbConfig, isConnected: true });
     } catch (err: any) {
       setSyncResult({
         success: false,
@@ -519,6 +499,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // --- Direct MySQL Connection Handlers ---
+  // Uses StorageService.connectDatabase which works in BOTH modes:
+  // Node hosting (/api/db/config server-side) AND static hosting
+  // (falls back to the PHP bridge to create the tables).
   const handleTestDatabaseConnection = async () => {
     setIsTestingDb(true);
     setDbTestResult(null);
@@ -526,38 +509,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     StorageService.saveDatabaseConfig(dbConfig);
 
     try {
-      // Save the connection on the server (data/db-config.json), test it,
-      // create all tables and seed initial data — this activates DB mode.
-      const res = await fetch('/api/db/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          config: {
-            host: dbConfig.host,
-            port: dbConfig.port,
-            database: dbConfig.database,
-            user: dbConfig.user,
-            password: dbConfig.password,
-            ssl: dbConfig.ssl,
-            tablePrefix: dbConfig.tablePrefix || 'cbq_',
-            bridgeMode: dbConfig.syncMode === 'bridge',
-            bridgeUrl: dbConfig.bridgeUrl,
-            bridgeSecret: dbConfig.bridgeSecret,
-          },
-          seedQuizzes: [],
-        }),
-      });
-      const data = await parseSafeApiResponse(
-        res,
-        'تعذر الاتصال بسيرفر Hostinger أو إنشاء الجداول.'
-      );
-      if (data.success) {
-        StorageService.saveDatabaseConfig({ ...dbConfig, isConnected: true });
-        requestAppDataRefresh();
-      }
+      const message = await StorageService.connectDatabase(dbConfig, false);
+      StorageService.saveDatabaseConfig({ ...dbConfig, isConnected: true });
+      requestAppDataRefresh();
       setDbTestResult({
-        success: Boolean(data.success),
-        message: data.message || (data.success ? 'تم حفظ الاتصال وتفعيله بنجاح! كل العمليات الآن عبر قاعدة البيانات.' : 'فشل الاتصال.'),
+        success: true,
+        message: message || 'تم حفظ الاتصال وتفعيله بنجاح! كل العمليات الآن عبر قاعدة البيانات.',
       });
     } catch (err: any) {
       setDbTestResult({
@@ -594,7 +551,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } catch (err: any) {
       setSyncResult({
         success: false,
-        message: `تعذر تنفيذ سكربت الجداول: ${err.message}`,
+        message: `تعذر تنفيذ سكربت الجداول: ${err.message}${err?.code === 'BAD_JSON' ? ' — إذا كان موقعك مستضافاً حجباً بدون Node.js، استخدم تبويب «جسر PHP المباشر» بدلاً من هذا.' : ''}`,
       });
     } finally {
       setIsSyncingTables(false);
@@ -630,7 +587,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } catch (err: any) {
       setDbTestResult({
         success: false,
-        message: `خطأ في جلب البيانات: ${err.message}`,
+        message: `خطأ في جلب البيانات: ${err.message}${err?.code === 'BAD_JSON' ? ' — إذا كان موقعك بدون Node.js، استخدم تبويب «جسر PHP المباشر».' : ''}`,
       });
     } finally {
       setIsTestingDb(false);
@@ -667,7 +624,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } catch (err: any) {
       setSyncResult({
         success: false,
-        message: `خطأ في رفع البيانات: ${err.message}`,
+        message: `خطأ في رفع البيانات: ${err.message}${err?.code === 'BAD_JSON' ? ' — إذا كان موقعك بدون Node.js، استخدم زر «رفع البيانات» في تبويب «جسر PHP المباشر».' : ''}`,
       });
     } finally {
       setIsSyncingTables(false);
