@@ -1615,6 +1615,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-stone-800 mb-1">
+                        اسم مستخدم القاعدة المُضمن بالملف:
+                      </label>
+                      <input
+                        type="text"
+                        value={dbConfig.user}
+                        onChange={(e) => setDbConfig({ ...dbConfig, user: e.target.value })}
+                        placeholder="u123456789_user"
+                        className="w-full p-3 rounded-xl border border-stone-300 font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-stone-800 mb-1">
+                        كلمة مرور القاعدة المُضمنة بالملف:
+                      </label>
+                      <input
+                        type="password"
+                        value={dbConfig.password}
+                        onChange={(e) => setDbConfig({ ...dbConfig, password: e.target.value })}
+                        placeholder="كلمة مرور قاعدة البيانات"
+                        className="w-full p-3 rounded-xl border border-stone-300 font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-stone-800 mb-1">
+                        المضيف المُضمن بالملف:
+                      </label>
+                      <input
+                        type="text"
+                        value={dbConfig.host}
+                        onChange={(e) => setDbConfig({ ...dbConfig, host: e.target.value })}
+                        placeholder="اتركه فارغاً ليُستخدم localhost"
+                        className="w-full p-3 rounded-xl border border-stone-300 font-mono text-xs"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Bridge Actions */}
