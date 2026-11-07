@@ -784,6 +784,9 @@ function normalizeQuizRow($q) {
     $totalPoints = (int)($q['totalPoints'] ?? 20);
     if ($totalPoints <= 0) { $totalPoints = 20; }
     $published = ($q['published'] === null || $q['published'] === '') ? true : (bool)((int)($q['published'] ?? 1));
+    // When normalizing a raw client payload (no *Json columns staged), fall back to the object fields
+    $versesRaw = isset($q['versesJson']) ? ($q['versesJson'] ?? '[]') : json_encode(!empty($q['verses']) && is_array($q['verses']) ? $q['verses'] : [], JSON_UNESCAPED_UNICODE);
+    $questionsRaw = isset($q['questionsJson']) ? ($q['questionsJson'] ?? '[]') : json_encode(!empty($q['questions']) && is_array($q['questions']) ? $q['questions'] : [], JSON_UNESCAPED_UNICODE);
     return [
         'id' => (string)($q['id'] ?? ''),
         'dayNumber' => (int)($q['dayNumber'] ?? 0),
@@ -798,8 +801,8 @@ function normalizeQuizRow($q) {
         'reflection' => ($q['reflection'] ?? '') ?? '',
         'audioUrl' => (string)($q['audioUrl'] ?? ''),
         'audioDuration' => ($q['audioDuration'] ?? '') ?: '5:00',
-        'verses' => bridgeSafeParse($q['versesJson'] ?? '[]', []),
-        'questions' => bridgeSafeParse($q['questionsJson'] ?? '[]', []),
+        'verses' => bridgeSafeParse($versesRaw, []),
+        'questions' => bridgeSafeParse($questionsRaw, []),
         'totalPoints' => $totalPoints,
         'published' => $published,
     ];

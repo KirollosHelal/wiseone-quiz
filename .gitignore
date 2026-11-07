@@ -8,3 +8,7 @@ coverage/
 !.env.example
 /data/
 server/data/
+
+/.aistudio/
+bible_sync_test.php
+wiseone-quiz.zip
