@@ -43,7 +43,9 @@ const DEFAULT_DB_CONFIG: DatabaseConfig = {
   isConnected: false,
   tablePrefix: 'cbq_',
   syncMode: 'direct',
-  bridgeUrl: '',
+  // Default bridge path: works for every visitor once bible_sync.php is uploaded
+  // to public_html — no need to configure the URL on every device.
+  bridgeUrl: 'https://wiseone.beinlive24.com/bible_sync.php',
   bridgeSecret: 'cbq_sec_9a7d4f128e',
 };
 
