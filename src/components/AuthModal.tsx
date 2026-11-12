@@ -162,14 +162,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <form onSubmit={handleSignIn} className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-stone-700 mb-1">
-                البريد الإلكتروني أو رقم الموبايل:
+                الاسم أو البريد الإلكتروني أو رقم الموبايل:
               </label>
               <div className="relative">
                 <input
                   type="text"
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="البريد الإلكتروني أو رقم الموبايل"
+                  placeholder="الاسم أو البريد أو رقم الموبايل"
                   className="w-full pl-3 pr-10 py-3 rounded-xl border border-stone-300 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none"
                   required
                 />
@@ -179,14 +179,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-stone-700 mb-1">
-                كلمة المرور:
+                كلمة المرور أو رقم الدخول (4 أرقام):
               </label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="كلمة المرور"
+                  placeholder="كلمة المرور أو رقم الدخول"
                   className="w-full pl-10 pr-10 py-3 rounded-xl border border-stone-300 text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none font-mono"
                   required
                 />

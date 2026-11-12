@@ -17,7 +17,7 @@ interface EasySolvePageProps {
 
 /**
  * اجتماع الحكماء (الوضع السهل للمسنّين) — صفحة واحدة فقط:
- * 1) الاسم + الرقم السري (بيانات يعطيها الخادم لكل مخدوم)
+ * 1) الاسم + رقم الدخول (4 أرقام يعطيها الخادم لكل مخدوم)
  * 2) تسجيل الأصحاح (صوت + نص)
  * 3) الأسئلة كلها في نموذج واحد ثم زر إرسال واحد كبير
  */
@@ -52,7 +52,7 @@ export const EasySolvePage: React.FC<EasySolvePageProps> = ({
     setLoginError(null);
     setLoginNotice(null);
     if (!identifier.trim() || !passcode.trim()) {
-      setLoginError('من فضلك اكتب الاسم أو رقم الهاتف والرقم السري الذي أعطاه لك الخادم.');
+      setLoginError('من فضلك اكتب اسمك ورقم الدخول (4 أرقام) الذي أعطاه لك الخادم.');
       return;
     }
     setIsLoggingIn(true);
@@ -62,7 +62,7 @@ export const EasySolvePage: React.FC<EasySolvePageProps> = ({
       setLoginNotice(res.message || `أهلاً بك يا «${res.user.fullName}»! تفضل الآن في الاستماع والقراءة ثم حل الأسئلة.`);
       onAuthenticated(res.user);
     } else {
-      setLoginError(res.error || 'تعذر تسجيل الدخول. تأكد من الاسم والرقم السري أو اطلب من الخادم مساعدتك.');
+      setLoginError(res.error || 'تعذر تسجيل الدخول. تأكد من الاسم ورقم الدخول أو اطلب من الخادم مساعدتك.');
     }
   };
 
@@ -185,7 +185,7 @@ export const EasySolvePage: React.FC<EasySolvePageProps> = ({
   // ============================================================
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      {/* ---------- SECTION 1: الاسم والرقم السري ---------- */}
+      {/* ---------- SECTION 1: الاسم ورقم الدخول ---------- */}
       <div className="bg-white rounded-3xl p-6 sm:p-8 border-2 border-stone-200 shadow-lg space-y-5">
         <div className="flex items-center gap-3 pb-4 border-b-2 border-stone-100">
           <div className="w-12 h-12 rounded-2xl bg-amber-500 text-stone-950 flex items-center justify-center text-2xl font-black shadow-md shrink-0">
@@ -235,17 +235,22 @@ export const EasySolvePage: React.FC<EasySolvePageProps> = ({
             </div>
             <div>
               <label htmlFor="easy-pass" className="block text-lg font-black text-stone-800 mb-2">
-                الرقم السري
+                رقم الدخول (4 أرقام)
               </label>
               <input
                 id="easy-pass"
-                type="password"
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
                 value={passcode}
-                onChange={(e) => setPasscode(e.target.value)}
+                onChange={(e) => setPasscode(e.target.value.replace(/[^\d]/g, '').slice(0, 9))}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
-                placeholder="الرقم السري الذي أعطاه لك الخادم"
-                className="w-full p-4 text-lg font-bold rounded-2xl border-2 border-stone-300 focus:border-amber-500 focus:ring-4 focus:ring-amber-200 focus:outline-none"
+                placeholder="مثال: 1234 — الرقم الذي أعطاه لك الخادم"
+                className="w-full p-4 text-lg font-bold rounded-2xl border-2 border-stone-300 focus:border-amber-500 focus:ring-4 focus:ring-amber-200 focus:outline-none tracking-[0.3em] text-center"
               />
+              <p className="text-stone-500 text-xs font-bold mt-1.5">
+                اكتب رقم الدخول المكوّن من 4 أرقام الذي أعطاه لك الخادم المسؤول
+              </p>
             </div>
 
             {loginError && (
@@ -482,7 +487,7 @@ export const EasySolvePage: React.FC<EasySolvePageProps> = ({
               <span>{isSubmitting ? 'جاري الإرسال...' : 'إرسال إجاباتي'}</span>
             </button>
             {!currentUser && (
-              <p className="text-center text-stone-500 font-bold text-sm">الزر يفتح بعد كتابة الاسم والرقم السري</p>
+              <p className="text-center text-stone-500 font-bold text-sm">الزر يفتح بعد كتابة الاسم ورقم الدخول</p>
             )}
           </div>
         )}

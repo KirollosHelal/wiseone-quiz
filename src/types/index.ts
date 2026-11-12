@@ -83,6 +83,8 @@ export interface UserQuizSubmission {
 
 export interface User {
   id: string;
+  /** رقم الدخول السهل (4 أرقام) — يستخدمه كبار السن بدل كلمة المرور */
+  loginId?: string;
   fullName: string;
   email?: string;
   password?: string;

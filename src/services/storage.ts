@@ -828,6 +828,7 @@ function normalizeSubmissionRow($s) {
 function normalizeUserRow($u, $subs = []) {
     return [
         'id' => (string)($u['id'] ?? ''),
+        'loginId' => ($u['loginId'] ?? null) !== null && ($u['loginId'] ?? '') !== '' ? (string)$u['loginId'] : null,
         'fullName' => (string)($u['fullName'] ?? ''),
         'email' => ($u['email'] ?? null) !== '' ? $u['email'] : null,
         'password' => ($u['password'] ?? null) !== '' ? $u['password'] : null,
@@ -873,6 +874,7 @@ function ensureTables($pdo, $prefix) {
     $ddl = [
         "CREATE TABLE IF NOT EXISTS {$prefix}users (
             id VARCHAR(64) NOT NULL PRIMARY KEY,
+            loginId VARCHAR(8) DEFAULT NULL,
             fullName VARCHAR(191) NOT NULL,
             email VARCHAR(191) DEFAULT NULL,
             password VARCHAR(191) DEFAULT NULL,
@@ -886,7 +888,8 @@ function ensureTables($pdo, $prefix) {
             servantNotes TEXT DEFAULT NULL,
             createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
             KEY idx_email (email),
-            KEY idx_phone (phone)
+            KEY idx_phone (phone),
+            UNIQUE KEY idx_login_id (loginId)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
         "CREATE TABLE IF NOT EXISTS {$prefix}daily_quizzes (
             id VARCHAR(64) NOT NULL PRIMARY KEY,
@@ -936,14 +939,64 @@ function ensureTables($pdo, $prefix) {
     }
     $stmt = $pdo->prepare("INSERT INTO {$prefix}users (id, fullName, email, password, phone, ageGroup, role, totalPoints, quizzesSolved, currentStreak, registeredBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'self') ON DUPLICATE KEY UPDATE password='123456789', role='admin'");
     $stmt->execute(['user-admin-kirillos', 'كيرلس هلال (الخادم المسؤول)', 'kirilloshelal@gmail.com', '123456789', '01220001111', 'servant', 'admin', 200, 12, 12]);
+
+    // loginId migration: add the 4-digit easy-login column for tables created before this feature
+    try {
+        $chk = $pdo->prepare("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'loginId'");
+        $chk->execute(["{$prefix}users"]);
+        if (!$chk->fetch()) {
+            $pdo->exec("ALTER TABLE {$prefix}users ADD COLUMN loginId VARCHAR(8) DEFAULT NULL, ADD UNIQUE KEY idx_login_id (loginId)");
+        }
+    } catch (Exception $e) { /* already exists */ }
+
+    // Backfill: give every user without a loginId the next free sequential 4-digit number
+    try {
+        $missing = $pdo->query("SELECT id FROM {$prefix}users WHERE loginId IS NULL OR loginId = ''")->fetchAll();
+        foreach ($missing as $row) {
+            $code = bridgeNextLoginId($pdo, $prefix);
+            if ($code !== '') {
+                $up = $pdo->prepare("UPDATE {$prefix}users SET loginId = ? WHERE id = ?");
+                $up->execute([$code, $row['id']]);
+            }
+        }
+    } catch (Exception $e) { /* best effort */ }
     return true;
+}
+
+/** Next free sequential 4-digit login code (1001-9999). */
+function bridgeNextLoginId($pdo, $prefix) {
+    $row = $pdo->query("SELECT COALESCE(MAX(CAST(loginId AS UNSIGNED)), 1000) AS maxId FROM {$prefix}users WHERE loginId IS NOT NULL AND loginId != ''")->fetch();
+    $next = max(1001, (int)($row['maxId'] ?? 1000) + 1);
+    while ($next <= 9999) {
+        $dup = $pdo->prepare("SELECT id FROM {$prefix}users WHERE loginId = ? LIMIT 1");
+        $dup->execute([(string)$next]);
+        if (!$dup->fetch()) { return (string)$next; }
+        $next++;
+    }
+    return '';
 }
 
 function upsertUser($pdo, $prefix, $u) {
     if (empty($u['id']) || empty($u['fullName'])) { return false; }
-    $stmt = $pdo->prepare("INSERT INTO {$prefix}users (id, fullName, email, password, phone, ageGroup, role, totalPoints, quizzesSolved, currentStreak, registeredBy, servantNotes, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE fullName=VALUES(fullName), email=VALUES(email), password=COALESCE(VALUES(password), password), phone=VALUES(phone), ageGroup=VALUES(ageGroup), role=VALUES(role), totalPoints=VALUES(totalPoints), quizzesSolved=VALUES(quizzesSolved), currentStreak=VALUES(currentStreak), registeredBy=VALUES(registeredBy), servantNotes=VALUES(servantNotes)");
+    // loginId: keep the provided one (reject duplicates), else auto-assign a free sequential 4-digit code
+    $loginId = isset($u['loginId']) && trim((string)$u['loginId']) !== '' ? trim((string)$u['loginId']) : null;
+    if ($loginId !== null) {
+        $dup = $pdo->prepare("SELECT id, fullName FROM {$prefix}users WHERE loginId = ? AND id <> ?");
+        $dup->execute([$loginId, (string)$u['id']]);
+        if ($dup->fetch()) { return 'duplicate_loginId'; }
+    }
+    if ($loginId === null) {
+        // new user? auto-assign. Existing user without code? also auto-assign.
+        $ex = $pdo->prepare("SELECT loginId FROM {$prefix}users WHERE id = ?");
+        $ex->execute([(string)$u['id']]);
+        $existing = $ex->fetch();
+        if (!$existing || $existing['loginId'] === null || $existing['loginId'] === '') {
+            $loginId = bridgeNextLoginId($pdo, $prefix);
+        }
+    }
+    $stmt = $pdo->prepare("INSERT INTO {$prefix}users (id, loginId, fullName, email, password, phone, ageGroup, role, totalPoints, quizzesSolved, currentStreak, registeredBy, servantNotes, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE loginId=COALESCE(VALUES(loginId), loginId), fullName=VALUES(fullName), email=VALUES(email), password=COALESCE(VALUES(password), password), phone=VALUES(phone), ageGroup=VALUES(ageGroup), role=VALUES(role), totalPoints=VALUES(totalPoints), quizzesSolved=VALUES(quizzesSolved), currentStreak=VALUES(currentStreak), registeredBy=VALUES(registeredBy), servantNotes=VALUES(servantNotes)");
     $stmt->execute([
-        (string)$u['id'], (string)$u['fullName'],
+        (string)$u['id'], $loginId, (string)$u['fullName'],
         !empty($u['email']) ? (string)$u['email'] : null,
         !empty($u['password']) ? (string)$u['password'] : null,
         (string)($u['phone'] ?? ''),
@@ -1088,9 +1141,14 @@ if ($action === 'login') {
     $found = $stmt->fetch();
     // 2) Fallback: match by normalized full name in PHP (spacing/diacritics/alef-form tolerant)
     if (!$found && $normName !== '') {
+        $exact = null; $prefixMatch = null; $prefixCount = 0;
         foreach ($pdo->query("SELECT * FROM {$prefix}users") as $row) {
-            if ($normalizeArabicName($row['fullName'] ?? '') === $normName) { $found = $row; break; }
+            $normRow = $normalizeArabicName($row['fullName'] ?? '');
+            if ($normRow === $normName) { $exact = $row; break; }
+            if (strpos($normRow, $normName) === 0) { $prefixCount++; $prefixMatch = $row; }
         }
+        if ($exact !== null) { $found = $exact; }
+        elseif ($prefixCount === 1) { $found = $prefixMatch; }
     }
     if (!$found) {
         if ($matchesBuiltinAdmin($identifier, $password)) {
@@ -1098,8 +1156,13 @@ if ($action === 'login') {
         }
         $respond(['success' => false, 'error' => 'المستخدم غير موجود. تأكد من الاسم أو البريد أو رقم الهاتف أو أنشئ حساباً جديداً.']);
     }
-    if (!empty($found['password']) && $found['password'] !== $password) {
-        $respond(['success' => false, 'error' => 'كلمة المرور غير صحيحة. حاول مرة أخرى.']);
+    // Accept either the stored password OR the 4-digit easy loginId (elderly login)
+    $passwordOk = empty($found['password']) || $found['password'] === $password;
+    $loginIdOk = $password !== '' && !empty($found['loginId']) && preg_replace('/[^0-9]/', '', $password) === (string)$found['loginId'];
+    if (!$passwordOk && !$loginIdOk) {
+        $respond(['success' => false, 'error' => !empty($found['loginId'])
+            ? 'الرقم غير صحيح. اكتب رقم الدخول (4 أرقام) الذي أعطاه لك الخادم.'
+            : 'كلمة المرور غير صحيحة. حاول مرة أخرى.']);
     }
     $subRows = loadSubmissions($pdo, $prefix, (string)$found['id']);
     $subs = array_map('normalizeSubmissionRow', $subRows);
@@ -1141,13 +1204,16 @@ if ($action === 'save_user') {
             $respond(['success' => false, 'message' => 'رقم الموبايل مسجل بالفعل من قبل «' . $dup['fullName'] . '». جرب تسجيل الدخول أو استخدم رقماً آخر.']);
         }
     }
-    upsertUser($pdo, $prefix, $u);
+    $result = upsertUser($pdo, $prefix, $u);
+    if ($result === 'duplicate_loginId') {
+        $respond(['success' => false, 'message' => 'رقم الدخول «' . trim((string)$u['loginId']) . '» مستخدم بالفعل من قبل حساب آخر. اختر رقماً آخر.']);
+    }
     $stmt = $pdo->prepare("SELECT * FROM {$prefix}users WHERE id = ?");
     $stmt->execute([(string)$u['id']]);
     $row = $stmt->fetch();
     $respond([
         'success' => true,
-        'message' => 'تم إنشاء حساب «' . (string)$u['fullName'] . '» وحفظه في قاعدة بيانات Hostinger بنجاح!',
+        'message' => 'تم إنشاء حساب «' . (string)$u['fullName'] . '» برقم دخول «' . ($row['loginId'] ?? '') . '» وحفظه في قاعدة بيانات Hostinger بنجاح!',
         'user' => $row ? normalizeUserRow($row, []) : normalizeUserRow($u, []),
     ]);
 }
@@ -1166,8 +1232,9 @@ if ($action === 'update_user') {
     if (!$stmt->fetch()) {
         $respond(['success' => false, 'message' => 'المستخدم غير موجود في قاعدة البيانات.']);
     }
-    $stmt = $pdo->prepare("UPDATE {$prefix}users SET fullName=?, email=?, password=COALESCE(?, password), phone=?, ageGroup=?, role=?, totalPoints=?, quizzesSolved=?, currentStreak=?, registeredBy=?, servantNotes=? WHERE id=?");
+    $stmt = $pdo->prepare("UPDATE {$prefix}users SET loginId=COALESCE(?, loginId), fullName=?, email=?, password=COALESCE(?, password), phone=?, ageGroup=?, role=?, totalPoints=?, quizzesSolved=?, currentStreak=?, registeredBy=?, servantNotes=? WHERE id=?");
     $stmt->execute([
+        (isset($u['loginId']) && trim((string)$u['loginId']) !== '') ? trim((string)$u['loginId']) : null,
         (string)$u['fullName'],
         !empty($u['email']) ? (string)$u['email'] : null,
         !empty($u['password']) ? (string)$u['password'] : null,
@@ -1391,7 +1458,7 @@ if ($action === 'push') {
     try {
         $userCount = 0;
         foreach ($users as $u) {
-            if (upsertUser($pdo, $prefix, $u)) { $userCount++; }
+            if (upsertUser($pdo, $prefix, $u) === true) { $userCount++; }
         }
         $quizCount = 0;
         foreach ($quizzes as $q) {

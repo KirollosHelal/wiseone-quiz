@@ -723,6 +723,50 @@ async function startServer() {
       ON DUPLICATE KEY UPDATE \`password\`='123456789', \`role\`='admin';
     `;
     await conn.query(ddl);
+
+    // loginId column: 4-digit easy login code for elderly users (unique, nullable).
+    // Added via migration for tables created before this feature existed.
+    try {
+      const [cols] = await conn.query(
+        `SELECT \`COLUMN_NAME\` FROM \`information_schema\`.\`COLUMNS\`
+          WHERE \`TABLE_SCHEMA\` = DATABASE() AND \`TABLE_NAME\` = ? AND \`COLUMN_NAME\` = 'loginId'`,
+        [`${tablePrefix}users`]
+      );
+      if ((cols as any[]).length === 0) {
+        await conn.query(
+          `ALTER TABLE \`${tablePrefix}users\` ADD COLUMN \`loginId\` VARCHAR(8) DEFAULT NULL, ADD UNIQUE KEY \`idx_login_id\` (\`loginId\`)`
+        );
+      }
+    } catch { /* column already exists */ }
+
+    // Backfill: give every user without a loginId the next free 4-digit number
+    try {
+      const [missing] = await conn.query(
+        `SELECT \`id\` FROM \`${tablePrefix}users\` WHERE \`loginId\` IS NULL OR \`loginId\` = ''`
+      );
+      for (const row of missing as any[]) {
+        const code = await generateFreeLoginId(conn, tablePrefix);
+        await conn.query(`UPDATE \`${tablePrefix}users\` SET \`loginId\` = ? WHERE \`id\` = ?`, [code, row.id]);
+      }
+    } catch { /* best effort */ }
+  };
+
+  /** Generate the next free sequential 4-digit login code (1001-9999). */
+  const generateFreeLoginId = async (conn: mysql.Connection, tablePrefix: string): Promise<string> => {
+    const [maxRows] = await conn.query(
+      `SELECT COALESCE(MAX(CAST(\`loginId\` AS UNSIGNED)), 1000) AS maxId
+         FROM \`${tablePrefix}users\` WHERE \`loginId\` IS NOT NULL AND \`loginId\` != ''`
+    );
+    let next = Math.max(1001, Number((maxRows as any[])[0]?.maxId) + 1);
+    for (let attempt = 0; attempt < 9000 && next <= 9999; attempt++, next++) {
+      const code = String(next);
+      const [dup] = await conn.query(
+        `SELECT \`id\` FROM \`${tablePrefix}users\` WHERE \`loginId\` = ? LIMIT 1`,
+        [code]
+      );
+      if ((dup as any[]).length === 0) return code;
+    }
+    return '';
   };
 
   const safeJsonParse = <T,>(raw: any, fallback: T): T => {
@@ -755,6 +799,7 @@ async function startServer() {
   // DB row -> client User (+ submissions from separate table)
   const normalizeUser = (u: any, submissions: any[] = []): any => ({
     id: u.id,
+    loginId: u.loginId ? String(u.loginId) : undefined,
     fullName: u.fullName,
     email: u.email ?? undefined,
     password: u.password ?? undefined,
@@ -991,16 +1036,28 @@ async function startServer() {
       }
     }
 
+    // Auto-assign a 4-digit loginId for easy elderly login (unless provided)
+    let loginId = u.loginId ? String(u.loginId).trim() : '';
+    if (loginId) {
+      const [dupLogin] = await conn.query(`SELECT \`id\`, \`fullName\` FROM \`${prefix}users\` WHERE \`loginId\` = ?`, [loginId]);
+      if ((dupLogin as any[]).length > 0) {
+        await conn.end();
+        return res.json({ success: false, message: `رقم الدخول «${loginId}» مستخدم بالفعل من قبل «${(dupLogin as any[])[0].fullName}». اختر رقماً آخر.` });
+      }
+    } else {
+      loginId = await generateFreeLoginId(conn, prefix);
+    }
+
     await conn.query(
       `INSERT INTO \`${prefix}users\`
-        (\`id\`, \`fullName\`, \`email\`, \`password\`, \`phone\`, \`ageGroup\`, \`role\`, \`totalPoints\`, \`quizzesSolved\`, \`currentStreak\`, \`registeredBy\`, \`servantNotes\`, \`createdAt\`)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [u.id, u.fullName, u.email || null, u.password || null, u.phone || '',
+        (\`id\`, \`loginId\`, \`fullName\`, \`email\`, \`password\`, \`phone\`, \`ageGroup\`, \`role\`, \`totalPoints\`, \`quizzesSolved\`, \`currentStreak\`, \`registeredBy\`, \`servantNotes\`, \`createdAt\`)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [u.id, loginId || null, u.fullName, u.email || null, u.password || null, u.phone || '',
         u.ageGroup || 'senior', u.role || 'user', u.totalPoints || 0, u.quizzesSolved || 0,
         u.currentStreak || 0, u.registeredBy || 'self', u.servantNotes || null, nowMysql()]
     );
     await conn.end();
-    res.json({ success: true, message: `تم إنشاء حساب «${u.fullName}» وحفظه في قاعدة البيانات بنجاح!`, user: normalizeUser(u) });
+    res.json({ success: true, message: `تم إنشاء حساب «${u.fullName}» برقم دخول «${loginId}» وحفظه في قاعدة البيانات بنجاح!`, user: { ...normalizeUser(u), loginId } });
   }));
 
   // --- Users: update ---
@@ -1013,10 +1070,10 @@ async function startServer() {
     await ensureDbSchema(conn, prefix);
     await conn.query(
       `UPDATE \`${prefix}users\` SET
-        \`fullName\`=?, \`email\`=?, \`password\`=COALESCE(?, \`password\`), \`phone\`=?, \`ageGroup\`=?, \`role\`=?,
+        \`loginId\`=?, \`fullName\`=?, \`email\`=?, \`password\`=COALESCE(?, \`password\`), \`phone\`=?, \`ageGroup\`=?, \`role\`=?,
         \`totalPoints\`=?, \`quizzesSolved\`=?, \`currentStreak\`=?, \`registeredBy\`=?, \`servantNotes\`=?
       WHERE \`id\`=?`,
-      [u.fullName, u.email || null, u.password || null, u.phone || '', u.ageGroup || 'senior',
+      [u.loginId ? String(u.loginId).trim() : null, u.fullName, u.email || null, u.password || null, u.phone || '', u.ageGroup || 'senior',
         u.role || 'user', u.totalPoints || 0, u.quizzesSolved || 0, u.currentStreak || 0,
         u.registeredBy || 'self', u.servantNotes || null, uid]
     );
@@ -1110,11 +1167,15 @@ async function startServer() {
       let found = (rows as any[])[0];
       // 2) Fallback: match by (normalized) full name in JS — tolerant to spacing,
       //    diacritics, أ/إ/آ, ة/ه and ى/ي differences between typing styles
-      if (!found) {
-        const normIdentifier = normalizeArabicName(String(identifier));
-        if (normIdentifier) {
-          const [allRows] = await conn.query(`SELECT * FROM \`${prefix}users\``);
-          found = (allRows as any[]).find(u => normalizeArabicName(String(u.fullName || '')) === normIdentifier);
+      const normIdentifier = normalizeArabicName(String(identifier));
+      if (!found && normIdentifier) {
+        const [allRows] = await conn.query(`SELECT * FROM \`${prefix}users\``);
+        const all = allRows as any[];
+        found = all.find(u => normalizeArabicName(String(u.fullName || '')) === normIdentifier);
+        // 3) Unique prefix match: allows typing «كيرلس هلال» for «كيرلس هلال (الخادم المسؤول)»
+        if (!found) {
+          const prefixMatches = all.filter(u => normalizeArabicName(String(u.fullName || '')).startsWith(normIdentifier));
+          if (prefixMatches.length === 1) found = prefixMatches[0];
         }
       }
       if (!found) {
@@ -1125,10 +1186,15 @@ async function startServer() {
         }
         return res.json({ success: false, error: 'المستخدم غير موجود. تأكد من الاسم أو البريد أو رقم الهاتف أو أنشئ حساباً جديداً.' });
       }
-      // Same rule as legacy local auth: empty stored password accepts any password
-      if (found.password && found.password !== String(password || '').trim()) {
+      // Accept either the stored password OR the 4-digit easy loginId (elderly login)
+      const code = String(password || '').trim();
+      const passwordOk = !found.password || found.password === code;
+      const loginIdOk = code !== '' && found.loginId && String(found.loginId) === code.replace(/\D/g, '');
+      if (!passwordOk && !loginIdOk) {
         await conn.end();
-        return res.json({ success: false, error: 'كلمة المرور غير صحيحة. حاول مرة أخرى.' });
+        return res.json({ success: false, error: found.loginId
+          ? 'الرقم غير صحيح. اكتب رقم الدخول (4 أرقام) الذي أعطاه لك الخادم.'
+          : 'كلمة المرور غير صحيحة. حاول مرة أخرى.' });
       }
       const [subRows] = await conn.query(
         `SELECT * FROM \`${prefix}submissions\` WHERE \`userId\` = ? ORDER BY \`submittedAt\` ASC`,

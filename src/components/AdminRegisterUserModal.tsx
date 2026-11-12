@@ -58,7 +58,7 @@ export const AdminRegisterUserModal: React.FC<AdminRegisterUserModalProps> = ({
         );
       }
 
-      setSuccessMessage(`تم تسجيل «${newUser.fullName}» بنجاح في قاعدة البيانات وإضافته لقائمة المتسابقين!`);
+      setSuccessMessage(`تم تسجيل «${newUser.fullName}» بنجاح! رقم الدخول الخاص به: ${(created as any)?.loginId || '—'} (أعطه له مع اسمه للدخول في «اجتماع الحكماء»)`);
       setTimeout(() => {
         onUserRegistered(created || newUser);
         onClose();

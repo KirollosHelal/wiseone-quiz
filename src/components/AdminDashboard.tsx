@@ -4,7 +4,7 @@ import {
   CheckCircle, FileText, Download, Upload, RefreshCw, 
   Plus, Check, X, SlidersHorizontal, UserPlus, Sparkles,
   Database, Server, Copy, ExternalLink, ShieldCheck, AlertCircle, Calendar, Star,
-  Link2, Zap, Globe, FileCode, CheckCircle2, Shield, Info, ArrowRight, Lock
+  Link2, Zap, Globe, FileCode, CheckCircle2, Shield, Info, ArrowRight, Lock, KeyRound
 } from 'lucide-react';
 import { DailyQuiz, Question, QuestionType, User, ScriptureVerse, DatabaseConfig } from '../types';
 import { StorageService, STORAGE_CHANGE_EVENT } from '../services/storage';
@@ -844,6 +844,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <span>·</span>
                     <span>تتابع: {u.currentStreak} أيام</span>
                   </div>
+                  {u.loginId && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="text-xs bg-emerald-50 border border-emerald-200 text-emerald-900 font-black px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5" dir="ltr">
+                        <KeyRound className="w-3.5 h-3.5 text-emerald-600" />
+                        {u.loginId}
+                      </span>
+                      <span className="text-[10px] text-stone-400 font-bold">رقم الدخول (4 أرقام) — يُعطى للمخدوم مع اسمه</span>
+                    </div>
+                  )}
                   {u.servantNotes && (
                     <p className="text-xs text-amber-800 bg-amber-50/70 p-1.5 rounded-lg mt-2 inline-block">
                       ملاحظة الخادم: {u.servantNotes}
