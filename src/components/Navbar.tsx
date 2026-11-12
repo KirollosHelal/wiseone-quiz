@@ -1,8 +1,8 @@
 import React from 'react';
 import { User } from '../types';
-import { LogIn, LogOut, BookOpen, Calendar, HelpCircle, Trophy, Shield, UserPlus } from 'lucide-react';
+import { LogIn, LogOut, BookOpen, Calendar, HelpCircle, Trophy, Shield, UserPlus, Glasses } from 'lucide-react';
 
-export type NavTab = 'today' | 'previous' | 'quiz' | 'leaderboard' | 'admin';
+export type NavTab = 'today' | 'previous' | 'quiz' | 'easy' | 'leaderboard' | 'admin';
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -69,6 +69,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               حل الأسئلة
+            </button>
+
+            <button
+              onClick={() => onSelectTab('easy')}
+              className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1 px-3 rounded-full font-black ${
+                currentTab === 'easy'
+                  ? 'text-stone-950 bg-amber-400 font-bold'
+                  : 'text-emerald-300 bg-emerald-900/40 hover:bg-emerald-800/50 hover:text-emerald-200'
+              }`}
+              title="صفحة واحدة بسيطة: الاسم والرقم السري، الصوت والنص، ثم الأسئلة في نموذج واحد"
+            >
+              الوضع السهل للمسنّين
             </button>
 
             <button
@@ -176,6 +188,20 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <HelpCircle className={`w-5 h-5 mb-0.5 ${currentTab === 'quiz' ? 'stroke-[2.5]' : ''}`} />
             <span className="text-[10px] leading-tight">حل الأسئلة</span>
+          </button>
+
+          {/* Tab 3.5: Easy mode for seniors */}
+          <button
+            onClick={() => onSelectTab('easy')}
+            className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-colors cursor-pointer ${
+              currentTab === 'easy'
+                ? 'text-amber-400 font-black bg-amber-400/10'
+                : 'text-emerald-400 hover:text-emerald-300 font-medium'
+            }`}
+            title="صفحة واحدة بسيطة للمسنّين"
+          >
+            <Glasses className={`w-5 h-5 mb-0.5 ${currentTab === 'easy' ? 'stroke-[2.5]' : ''}`} />
+            <span className="text-[10px] leading-tight">الوضع السهل</span>
           </button>
 
           {/* Tab 4: Leaderboard */}

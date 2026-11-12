@@ -10,6 +10,7 @@ import { Navbar, NavTab } from './components/Navbar';
 import { SeniorToolbar } from './components/SeniorToolbar';
 import { ChapterReader } from './components/ChapterReader';
 import { QuizEngine } from './components/QuizEngine';
+import { EasySolvePage } from './components/EasySolvePage';
 import { PreviousDays } from './components/PreviousDays';
 import { Leaderboard } from './components/Leaderboard';
 import { AdminDashboard } from './components/AdminDashboard';
@@ -325,6 +326,20 @@ export default function App() {
             onBackToReading={() => setCurrentTab('today')}
             onGoToLeaderboard={() => setCurrentTab('leaderboard')}
             onRequireAuth={() => setIsAuthModalOpen(true)}
+          />
+        )}
+
+        {/* TAB 3.5: EASY MODE (الوضع السهل للمسنّين) */}
+        {!isDataLoading && currentTab === 'easy' && selectedQuiz && (
+          <EasySolvePage
+            key={selectedQuiz.id + (currentUser?.id || 'guest')}
+            quiz={selectedQuiz}
+            currentUser={currentUser}
+            onAuthenticated={(user) => setCurrentUser(user)}
+            onLogout={() => {
+              StorageService.logout();
+              setCurrentUser(null);
+            }}
           />
         )}
 
