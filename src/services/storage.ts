@@ -1059,22 +1059,44 @@ if ($action === 'sync_tables') {
 }
 
 /* =========================================================
-   3) login — تسجيل الدخول (بريد أو موبايل + كلمة مرور)
+   3) login — تسجيل الدخول (الاسم أو بريد أو موبايل + كلمة مرور)
    ========================================================= */
 if ($action === 'login') {
     ensureTables($pdo, $prefix);
     $identifier = trim((string)($jsonInput['identifier'] ?? ''));
     $password = trim((string)($jsonInput['password'] ?? ''));
-    if ($identifier === '') { $respond(['success' => false, 'error' => 'يرجى إدخال البريد أو رقم الهاتف.']); }
+    if ($identifier === '') { $respond(['success' => false, 'error' => 'يرجى إدخال الاسم أو البريد أو رقم الهاتف.']); }
     $digits = preg_replace('/[^0-9]/', '', $identifier);
+    // Normalize names for tolerant matching: collapse spaces, strip diacritics & tatweel,
+    // unify أ/إ/آ/ٱ→ا, ة→ه, ى→ي (same rules applied to both the typed name and the stored fullName)
+    $normName = strtolower(trim(preg_replace('/\\s+/u', ' ', $identifier)));
+    $normName = str_replace(['ً','ٌ','ٍ','َ','ُ','ِ','ْ','ـ'], '', $normName);
+    $normName = str_replace(['أ','إ','آ','ٱ'], 'ا', $normName);
+    $normName = str_replace('ة', 'ه', $normName);
+    $normName = str_replace('ى', 'ي', $normName);
+    $normalizeArabicName = function ($s) {
+        $n = strtolower(trim(preg_replace('/\\s+/u', ' ', (string)$s)));
+        $n = str_replace(['ً','ٌ','ٍ','َ','ُ','ِ','ْ','ـ'], '', $n);
+        $n = str_replace(['أ','إ','آ','ٱ'], 'ا', $n);
+        $n = str_replace('ة', 'ه', $n);
+        $n = str_replace('ى', 'ي', $n);
+        return $n;
+    };
+    // 1) Fast exact match on email / phone
     $stmt = $pdo->prepare("SELECT * FROM {$prefix}users WHERE LOWER(email) = LOWER(?) OR REPLACE(REPLACE(phone, ' ', ''), '-', '') = ? LIMIT 1");
     $stmt->execute([$identifier, $digits]);
     $found = $stmt->fetch();
+    // 2) Fallback: match by normalized full name in PHP (spacing/diacritics/alef-form tolerant)
+    if (!$found && $normName !== '') {
+        foreach ($pdo->query("SELECT * FROM {$prefix}users") as $row) {
+            if ($normalizeArabicName($row['fullName'] ?? '') === $normName) { $found = $row; break; }
+        }
+    }
     if (!$found) {
         if ($matchesBuiltinAdmin($identifier, $password)) {
             $respond(['success' => true, 'user' => $BUILTIN_USER]);
         }
-        $respond(['success' => false, 'error' => 'المستخدم غير موجود. تأكد من البريد أو رقم الهاتف أو أنشئ حساباً جديداً.']);
+        $respond(['success' => false, 'error' => 'المستخدم غير موجود. تأكد من الاسم أو البريد أو رقم الهاتف أو أنشئ حساباً جديداً.']);
     }
     if (!empty($found['password']) && $found['password'] !== $password) {
         $respond(['success' => false, 'error' => 'كلمة المرور غير صحيحة. حاول مرة أخرى.']);

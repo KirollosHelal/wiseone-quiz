@@ -1062,9 +1062,21 @@ async function startServer() {
     return idMatch && String(password || '').trim() === BUILTIN_ADMIN.password;
   };
 
+  // Normalize an Arabic name for tolerant login matching: collapse whitespace,
+  // strip diacritics & tatweel, unify alef forms أ/إ/آ/ٱ→ا, ة→ه, ى→ي
+  const normalizeArabicName = (s: string): string =>
+    String(s || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .replace(/[ًٌٍَُِّْـ]/g, '')
+      .replace(/[أإآٱ]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي')
+      .toLowerCase();
+
   app.post('/api/auth/login', async (req, res) => {
     const { identifier, password } = req.body || {};
-    if (!identifier) return res.json({ success: false, error: 'يرجى إدخال البريد أو رقم الهاتف.' });
+    if (!identifier) return res.json({ success: false, error: 'يرجى إدخال الاسم أو البريد أو رقم الهاتف.' });
 
     const cfg = readStoredDbConfig();
 
@@ -1088,18 +1100,30 @@ async function startServer() {
       const prefix = cfg.tablePrefix || 'cbq_';
       const conn = await getDbConnection(cfg);
       await ensureDbSchema(conn, prefix);
+      // 1) Fast exact match on email / phone
       const [rows] = await conn.query(
-        `SELECT * FROM \`${prefix}users\` WHERE LOWER(\`email\`) = LOWER(?) OR REPLACE(REPLACE(\`phone\`, ' ', ''), '-', '') = ? LIMIT 1`,
+        `SELECT * FROM \`${prefix}users\` WHERE LOWER(\`email\`) = LOWER(?)
+           OR REPLACE(REPLACE(\`phone\`, ' ', ''), '-', '') = ?
+         LIMIT 1`,
         [String(identifier).trim(), String(identifier).replace(/\D/g, '')]
       );
-      const found = (rows as any[])[0];
+      let found = (rows as any[])[0];
+      // 2) Fallback: match by (normalized) full name in JS — tolerant to spacing,
+      //    diacritics, أ/إ/آ, ة/ه and ى/ي differences between typing styles
+      if (!found) {
+        const normIdentifier = normalizeArabicName(String(identifier));
+        if (normIdentifier) {
+          const [allRows] = await conn.query(`SELECT * FROM \`${prefix}users\``);
+          found = (allRows as any[]).find(u => normalizeArabicName(String(u.fullName || '')) === normIdentifier);
+        }
+      }
       if (!found) {
         await conn.end();
         // The built-in admin can always sign in even if the DB row is missing
         if (matchesBuiltinAdmin(identifier, password)) {
           return res.json({ success: true, user: BUILTIN_ADMIN });
         }
-        return res.json({ success: false, error: 'المستخدم غير موجود. تأكد من البريد أو رقم الهاتف أو أنشئ حساباً جديداً.' });
+        return res.json({ success: false, error: 'المستخدم غير موجود. تأكد من الاسم أو البريد أو رقم الهاتف أو أنشئ حساباً جديداً.' });
       }
       // Same rule as legacy local auth: empty stored password accepts any password
       if (found.password && found.password !== String(password || '').trim()) {
