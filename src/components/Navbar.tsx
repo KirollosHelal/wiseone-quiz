@@ -2,7 +2,7 @@ import React from 'react';
 import { User } from '../types';
 import { LogIn, LogOut, BookOpen, Calendar, HelpCircle, Trophy, Shield, UserPlus, Glasses } from 'lucide-react';
 
-export type NavTab = 'today' | 'previous' | 'quiz' | 'easy' | 'leaderboard' | 'admin';
+export type NavTab = 'today' | 'previous' | 'quiz' | 'wise' | 'leaderboard' | 'admin';
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -72,15 +72,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={() => onSelectTab('easy')}
+              onClick={() => onSelectTab('wise')}
               className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1 px-3 rounded-full font-black ${
-                currentTab === 'easy'
+                currentTab === 'wise'
                   ? 'text-stone-950 bg-amber-400 font-bold'
                   : 'text-emerald-300 bg-emerald-900/40 hover:bg-emerald-800/50 hover:text-emerald-200'
               }`}
               title="صفحة واحدة بسيطة: الاسم والرقم السري، الصوت والنص، ثم الأسئلة في نموذج واحد"
             >
-              الوضع السهل للمسنّين
+              اجتماع الحكماء
             </button>
 
             <button
@@ -190,18 +190,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="text-[10px] leading-tight">حل الأسئلة</span>
           </button>
 
-          {/* Tab 3.5: Easy mode for seniors */}
+          {/* Tab 3.5: Elders meeting (easy one-page mode) */}
           <button
-            onClick={() => onSelectTab('easy')}
+            onClick={() => onSelectTab('wise')}
             className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-colors cursor-pointer ${
-              currentTab === 'easy'
+              currentTab === 'wise'
                 ? 'text-amber-400 font-black bg-amber-400/10'
                 : 'text-emerald-400 hover:text-emerald-300 font-medium'
             }`}
-            title="صفحة واحدة بسيطة للمسنّين"
+            title="اجتماع الحكماء — صفحة واحدة بسيطة"
           >
-            <Glasses className={`w-5 h-5 mb-0.5 ${currentTab === 'easy' ? 'stroke-[2.5]' : ''}`} />
-            <span className="text-[10px] leading-tight">الوضع السهل</span>
+            <Glasses className={`w-5 h-5 mb-0.5 ${currentTab === 'wise' ? 'stroke-[2.5]' : ''}`} />
+            <span className="text-[10px] leading-tight">الحكماء</span>
           </button>
 
           {/* Tab 4: Leaderboard */}

@@ -25,7 +25,13 @@ export default function App() {
   const [users, setUsers] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(() => StorageService.getCurrentUser());
   const [selectedQuiz, setSelectedQuiz] = useState<DailyQuiz | null>(null);
-  const [currentTab, setCurrentTab] = useState<NavTab>('today');
+  const [currentTab, setCurrentTab] = useState<NavTab>(() => {
+    // Route support: /wise opens the Elders meeting page directly
+    try {
+      if (window.location.pathname.replace(/\/+$/, '') === '/wise') return 'wise';
+    } catch { /* ignore */ }
+    return 'today';
+  });
   const [seniorSettings, setSeniorSettings] = useState<SeniorSettings>(() => StorageService.getSeniorSettings());
   const [dbError, setDbError] = useState<string | null>(null);
   const [isDataLoading, setIsDataLoading] = useState<boolean>(true);
@@ -95,6 +101,25 @@ export default function App() {
       document.body.classList.remove('high-contrast');
     }
   }, [seniorSettings.highContrast]);
+
+  // Keep the URL in sync with the /wise route + handle browser back/forward
+  useEffect(() => {
+    const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
+    if (currentTab === 'wise' && currentPath !== '/wise') {
+      window.history.pushState({}, '', '/wise');
+    } else if (currentTab !== 'wise' && currentPath === '/wise') {
+      window.history.pushState({}, '', '/');
+    }
+  }, [currentTab]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const isWise = window.location.pathname.replace(/\/+$/, '') === '/wise';
+      setCurrentTab(isWise ? 'wise' : 'today');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   const handleUpdateSettings = (newSettings: SeniorSettings) => {
     setSeniorSettings(newSettings);
@@ -329,8 +354,8 @@ export default function App() {
           />
         )}
 
-        {/* TAB 3.5: EASY MODE (الوضع السهل للمسنّين) */}
-        {!isDataLoading && currentTab === 'easy' && selectedQuiz && (
+        {/* TAB 3.5: WISE / ELDERS MEETING (اجتماع الحكماء — /wise) */}
+        {!isDataLoading && currentTab === 'wise' && selectedQuiz && (
           <EasySolvePage
             key={selectedQuiz.id + (currentUser?.id || 'guest')}
             quiz={selectedQuiz}

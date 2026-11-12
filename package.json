@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "start": "node server.ts",
-    "build": "vite build",
+    "build": "vite build && node -e \"const fs=require('fs'),p=require('path');fs.mkdirSync(p.join('dist','wise'),{recursive:true});fs.copyFileSync(p.join('dist','index.html'),p.join('dist','wise','index.html'));console.log('dist/wise/index.html created (route /wise works on static hosting)');\"",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
